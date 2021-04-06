@@ -30,15 +30,19 @@
 //define 12 servos for 4 legs
 Servo servo[4][3];
 //define servos' ports
-const int servo_pin[4][3] = { {2, 3, 4}, {5, 6, 7}, {8, 9, 10}, {11, 12, 13} };
+const int servo_pin[4][3] = { {8, 9, 7}, {11, 10, 12}, {4, 3, 5}, {A1, A2, A0} };
 /* Size of the robot ---------------------------------------------------------*/
 const float length_a = 55;
 const float length_b = 77.5;
 const float length_c = 27.5;
 const float length_side = 71;
-const float z_absolute = -28;
+float z_absolute = -32; //-28 is default //was const
 /* Constants for movement ----------------------------------------------------*/
-const float z_default = -50, z_up = -30, z_boot = z_absolute;
+float z_default = -50, z_up = -30, z_boot = z_absolute;
+//z_boot: Boot Position, Sit
+//z_default: Default (almost every motion)
+//z_up: When a leg is lifted to move
+//can I change speed while in motion?
 const float x_default = 62, x_offset = 0;
 const float y_start = 0, y_step = 40;
 const float y_default = x_default;
@@ -47,7 +51,7 @@ volatile float site_now[4][3];    //real-time coordinates of the end of each leg
 volatile float site_expect[4][3]; //expected coordinates of the end of each leg
 float temp_speed[4][3];   //each axis' speed, needs to be recalculated before each movement
 float move_speed;     //movement speed
-float speed_multiple = 1; //movement speed multiple
+float speed_multiple = 1; //1 is default
 const float spot_turn_speed = 4;
 const float leg_move_speed = 8;
 const float body_move_speed = 3;
@@ -75,14 +79,15 @@ const float turn_y0 = temp_b * sin(temp_alpha) - turn_y1 - length_side;
    ---------------------------------------------------------------------------*/
 void setup()
 {
-  //start serial for debug
-  Serial.begin(115200);
-  Serial.println("Robot starts initialization");
+  Serial.begin(9600);
+
+  while (!Serial);
+
   //initialize default parameter
   set_site(0, x_default - x_offset, y_start + y_step, z_boot);
-  set_site(1, x_default - x_offset, y_start + y_step, z_boot);
-  set_site(2, x_default + x_offset, y_start, z_boot);
-  set_site(3, x_default + x_offset, y_start, z_boot);
+  set_site(1, x_default - x_offset, y_start + y_step, z_boot); //set_site(1, x_default - x_offset, y_start, z_boot);
+  set_site(2, x_default + x_offset, y_start + y_step, z_boot);
+  set_site(3, x_default + x_offset, y_start + y_step, z_boot); //set_site(3, x_default + x_offset, y_start, z_boot);
   for (int i = 0; i < 4; i++)
   {
     for (int j = 0; j < 3; j++)
@@ -90,16 +95,14 @@ void setup()
       site_now[i][j] = site_expect[i][j];
     }
   }
+
   //start servo service
   FlexiTimer2::set(20, servo_service);
   FlexiTimer2::start();
-  Serial.println("Servo service started");
+
   //initialize servos
   servo_attach();
-  Serial.println("Servos initialized");
-  Serial.println("Robot initialization Complete");
 }
-
 
 void servo_attach(void)
 {
@@ -127,35 +130,103 @@ void servo_detach(void)
 /*
   - loop function
    ---------------------------------------------------------------------------*/
+char received = '\0';
+boolean shouldRead = true;
+
 void loop()
 {
-  Serial.println("Stand");
-  stand();
-  delay(2000);
-  Serial.println("Step forward");
-  step_forward(5);
-  delay(2000);
-  Serial.println("Step back");
-  step_back(5);
-  delay(2000);
-  Serial.println("Turn left");
-  turn_left(5);
-  delay(2000);
-  Serial.println("Turn right");
-  turn_right(5);
-  delay(2000);
-  Serial.println("Hand wave");
-  hand_wave(3);
-  delay(2000);
-  Serial.println("Hand wave");
-  hand_shake(3);
-  delay(2000);  
-  Serial.println("Body dance");
-  body_dance(10);
-  delay(2000);    
-  Serial.println("Sit");
-  sit();
-  delay(5000);
+
+  if (shouldRead && Serial.available())
+  {
+    char c = Serial.read();
+    if (c == 'h' || c == 'v')
+    {
+      shouldRead = false;
+      switch (c)
+      {
+        case 'v':
+          double digitV;
+          digitV = Serial.parseFloat();
+
+          if (digitV > 10)
+          {
+            speed_multiple = 20;
+          }
+          else if (digitV < 0.1)
+          {
+            speed_multiple = 0.1;
+          }
+          else
+          {
+            speed_multiple = digitV;
+          }
+          break;
+        case 'h':
+          double digitH;
+          digitH = Serial.parseFloat();
+
+          if (digitH > 110)
+          {
+            z_default = -110;
+          }
+          else if (digitH < -1 * z_absolute)
+          {
+            z_default = z_absolute;
+          }
+          else
+          {
+            z_default = -1 * digitH;
+          }
+          break;
+      }
+      shouldRead = true;
+    }
+    else
+    {
+      received = c;
+    }
+  }
+
+  switch (received)
+  {
+    case 'W':
+      step_forward(1);
+      break;
+    case 'A':
+      turn_left(1);
+      break;
+    case 'D':
+      turn_right(1);
+      break;
+    case 'S':
+      step_back(1);
+      break;
+    case 'I':
+      stand();
+      break;
+    case 'J':
+      hand_wave(2);
+      break;
+    case 'K':
+      hand_shake(1);
+      break;
+    case 'L':
+      sit();
+      break;
+    case 'R':
+      servo_attach();
+      break;
+    case 'T':
+      float temp;
+      temp = z_default;
+      z_default = -50;
+      body_dance(5);
+      stand();
+      z_default = temp;
+      break;
+    default:
+      break;
+  }
 }
 
 /*
